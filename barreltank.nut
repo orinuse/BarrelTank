@@ -39,8 +39,9 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 			local rock = EntIndexToHScript( entid )
 			local tank = null
 			local barrel = null
-			// Null it manually if it's valid but not the right entity (this edict was destroyed and a new one created before we could think again)
-			if ( rock != null && rock.GetEntityHandle() != lastthink_rock_handle[entid] )
+
+			// If the last think was not invalid, the current entity is not invalid, but the handles don't match, then we consider it a fail case.
+			if ( rock != null && rock.GetEntityHandle() != lastthink_rock_handle[entid] && lastthink_rock_handle[entid] != null )
 			{
 				rock = null
 			}
