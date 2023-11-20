@@ -151,7 +151,7 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 					DoEntFire(barrelname, "SetParent", rockname, -1, null, null)
 					DoEntFire(barrelname, "Enable", "", -1, null, null)
 					DoEntFire(barrelname, "DisableCollision", "", -1, null, null)
-					SetPropEntity( childprop, "m_hOwnerEntity", rock )
+					SetPropEntity( barrel, "m_hOwnerEntity", rock )
 
 					// Don't render the rock
 					SetPropInt( rock, "m_nRenderMode", 10 )
