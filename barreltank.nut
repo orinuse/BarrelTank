@@ -28,6 +28,8 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 	local lastthink_rock_handle = array(2048)
 	local lastthink_rock_origin = array(2048)
 	local lastthink_rock_angles = array(2048)
+	local lastthink_rock_onnext = array(2048)
+	local lastthink_rock_flying = array(2048)
 
 	// Scan for any rocks in play
 	::LookForRock <- function()
@@ -40,16 +42,26 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 			local tank = null
 			local barrel = null
 
+			// Whether or not this entity is a valid tank rock
+			local is_rock = false
+			if ( rock != null & rock.GetClassname() == "tank_rock" )
+				is_rock = true
+
 			// If the last think was not invalid, the current entity is not invalid, but the handles don't match, then we consider it a fail case.
+			// This specifically means that between thinks, a new edict occupied this slot that doesn't match the previous one, so the rock must have been destroyed.
+			// If the new entity is in fact a rock, we'll need to handle both an explosion at the old coords AND queue a new rock.
 			if ( rock != null && rock.GetEntityHandle() != lastthink_rock_handle[entid] && lastthink_rock_handle[entid] != null )
 			{
-				rock = null
+				// If it's not a rock, null it, whatever entity this is, it's not the correct type.
+				if ( !is_rock )
+					rock = null
 			}
 
-			// Was this edict in the table on the last tick, but gone now?
-			if ( lastthink_rock_handle[entid] != null && rock == null )
+			// Was this edict in the table on the last tick, but now gone or not a rock?
+			if ( lastthink_rock_handle[entid] != null && ( rock == null || !is_rock ) )
 			{
 				// No, it just vanished, break a barrel here and ignore the rest of the code.
+				ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " breaking because it stopped existing")
 
 				SpawnEntityFromTable("prop_fuel_barrel", {
 					origin = lastthink_rock_origin[entid],
@@ -69,16 +81,48 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 				lastthink_rock_handle[entid] = null
 				lastthink_rock_origin[entid] = null
 				lastthink_rock_angles[entid] = null
+				lastthink_rock_onnext[entid] = null
+				lastthink_rock_flying[entid] = null
 
-				// Don't run the rest of this code
-				continue
+				// Don't run the rest of this code unless the current entity is in fact a new rock that managed to occupy this slot between thinks.
+				if ( !is_rock )
+				{
+					ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " broke successfully, and the current edict is not a valid rock, halting here")
+					continue
+				}
+				else
+					ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " broke successfully, but the current edict is also a (different) valid rock, allowing future code")
 			}
-			else if ( rock != null && rock.GetClassname() == "tank_rock" )
+
+			// Is this rock valid, and in fact a rock?
+			if ( is_rock )
 			{
-				tank = rock.GetOwnerEntity()
+				// Yep.
+				// Don't fill the tank variable yet, the OwnerEntity var may not yet be filled on the first frame.
+				tank = null
+
+				local do_update = false
+
+				/// Fill with the relative offset of the barrel (context-specific)
+				local offset_qangle
+				local offset_vector
+				// Instead, we'll check to see that the handle is not yet extant. If it's not, then we just started existing.
 				if ( lastthink_rock_handle[entid] == null )
 				{
-					// This rock just started existing.
+					// This rock just started existing. We'll need to wait a frame to get data from it. have we already waited that frame?
+					if ( lastthink_rock_onnext[entid] != true )
+					{
+						// No, set this to true so we fail this check on the next frame, and instead run the code as intended.
+						lastthink_rock_onnext[entid] = true
+						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " delaying first spawn code & staying invalid until the next frame")
+						// Don't fill the handle yet
+						continue
+					}
+					else
+						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " running first spawn code")
+
+					// We've passed the one-frame-delay check, fill stuff.
+					tank = rock.GetOwnerEntity()
 
 					lastthink_rock_handle[entid] = rock.GetEntityHandle()
 
@@ -109,48 +153,79 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 					DoEntFire(barrelname, "DisableCollision", "", -1, null, null)
 					SetPropEntity( childprop, "m_hOwnerEntity", rock )
 
-					// Do we HAVE to do it this way?
-					DoEntFire(rockname, "RunScriptCode", "DisableDraw(self)", 0.01, null, null)
+					// Don't render the rock
+					SetPropInt( rock, "m_RenderMode", 10 )
+
+					do_update = true
+					if ( tank.GetSequence() == tank.LookupSequence("Throw_03") )
+					{
+						offset_qangle = Vector(0, 0, 90)
+						offset_vector = Vector(16, 24, 0)
+						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " using Throw_03 offset")
+					}
+					else
+					{
+						offset_qangle = Vector(0, -90, 90)
+						offset_vector = Vector(24, 0, 0)
+						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " using Throw_02/Throw_04 offset")
+					}
+				}
+				else if ( lastthink_rock_handle[entid] == rock.GetEntityHandle() )
+				{
+					// The rock is continuing to exist, so we'll just grab its info.
+					barrel = rock.FirstMoveChild()
+					tank = rock.GetOwnerEntity()
 				}
 				else
+					ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "WARNING: Logical error in BarrelRock " + rock.GetEntityIndex() + ": Last think handle ID does not match current handle ID, skill issue tbh")
+
+				// Wait for the rock to have no moveparent.
+				// Once it loses its moveparent, we'll update lastthink_rock_flying[entid] to true so we don't keep running this code over and over while it's flying (since there'd be no real reason to do that)
+				// This effectively acts like a 
+				if ( rock.GetMoveParent() == null )
 				{
-					// The rock is continuing to exist.
-					barrel = rock.FirstMoveChild()
+					// We hit a valid flying rock entity, let's update its vectors.
+					lastthink_rock_origin[entid] = GetPropVector( rock, "m_vecOrigin" )
+					lastthink_rock_angles[entid] = GetPropVector( rock, "m_angRotation" )
+					
+					if ( lastthink_rock_flying[entid] != true )
+					{
+						lastthink_rock_flying[entid] = true
+
+						if ( barrel == null )
+						{
+							ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "WARNING: BarrelRock " + rock.GetEntityIndex() + " released & had no valid barrel to update the offset of, for some reason")
+							continue
+						}
+						else
+							ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "SUCCESS: BarrelRock " + rock.GetEntityIndex() + " released & had a valid barrel to update the offset of")
+
+
+						// ClientPrint(null, 3, ""+rockanim)
+
+						// When the rock has no moveparent, we'll use this vector.
+
+						do_update = true
+
+						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " using flying offset (identical to Throw_03)")
+						offset_qangle = Vector(0, 0, 90)
+						offset_vector = Vector(16, 24, 0)
+
+					}
+					else
+						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " not updating offset because the rock is already flying")
 				}
-				// Do NOT interupt here, we'll see if the rest of the code
+
+				if ( do_update )
+				{
+					// Final setting
+					ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " updating barrel orientation")
+					SetPropVector( barrel, "m_vecOrigin", offset_vector )
+					SetPropVector( barrel, "m_angRotation", offset_qangle )
+				}
+				else
+					ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " not updating barrel orientation")
 			}
-
-			// No barrel? :(
-			if ( barrel == null ) continue
-
-			// We hit a valid rock entity, let's update our vectors.
-			lastthink_rock_origin[entid] = GetPropVector( rock, "m_vecOrigin" )
-			lastthink_rock_angles[entid] = GetPropVector( rock, "m_angRotation" )
-
-			local tankanim = tank.GetSequence()
-			local animtime = tank.GetSequenceDuration(tankanim)
-			// ClientPrint(null, 3, ""+rockanim)
-
-
-			/// Update the angle of the barrel
-			local offset_qangle
-			local offset_vector
-
-			// When the rock has no moveparent OR the tank is playing Throw_03, we use the first vectors, otherwise use the second vectors to cover Throw_02 and Throw_04
-			if ( tankanim == tank.LookupSequence("Throw_03") || rock.GetMoveParent() == null )
-			{
-				offset_qangle = Vector(0, 0, 90)
-				offset_vector = Vector(16, 24, 0)
-			}
-			else
-			{
-				offset_qangle = Vector(0, -90, 90)
-				offset_vector = Vector(24, 0, 0)
-			}
-
-			// Final setting
-			SetPropVector( barrel, "m_vecOrigin", offset_vector )
-			SetPropVector( barrel, "m_angRotation", offset_qangle )
 		}
 		return -1
 	}
