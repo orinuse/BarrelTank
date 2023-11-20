@@ -35,17 +35,21 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 	::LookForRock <- function()
 	{
 		// Iterate over all edicts in the map
-		for ( local entid = 0; entid < 2048; entid++ )
+		for ( local entid = 1; entid < 2048; entid++ )
 		{
 			// Get a script handle from this edict.
 			local rock = EntIndexToHScript( entid )
-			local tank = null
-			local barrel = null
 
 			// Whether or not this entity is a valid tank rock
 			local is_rock = false
-			if ( rock != null & rock.GetClassname() == "tank_rock" )
+			// If the rock is NOT valid, and it was not valid on the previous frame, then we'll skip the rest of the code here.
+			if ( rock != null && rock.GetClassname() == "tank_rock" )
 				is_rock = true
+			else if ( lastthink_rock_handle[entid] == null )
+				continue
+
+			local tank = null
+			local barrel = null
 
 			// If the last think was not invalid, the current entity is not invalid, but the handles don't match, then we consider it a fail case.
 			// This specifically means that between thinks, a new edict occupied this slot that doesn't match the previous one, so the rock must have been destroyed.
