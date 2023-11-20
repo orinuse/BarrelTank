@@ -154,7 +154,7 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 					SetPropEntity( childprop, "m_hOwnerEntity", rock )
 
 					// Don't render the rock
-					SetPropInt( rock, "m_RenderMode", 10 )
+					SetPropInt( rock, "m_nRenderMode", 10 )
 
 					do_update = true
 					if ( tank.GetSequence() == tank.LookupSequence("Throw_03") )
@@ -215,6 +215,9 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 					else
 						ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " not updating offset because the rock is already flying")
 				}
+				// Spammy and not really useful info
+				//else
+				//	ClientPrint(null, DirectorScript.HUD_PRINTCONSOLE, "BarrelRock " + rock.GetEntityIndex() + " not updating offset yet because the rock has not yet been thrown")
 
 				if ( do_update )
 				{
