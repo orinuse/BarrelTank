@@ -96,6 +96,7 @@ if (!IsModelPrecached(MODEL_BARREL_GIB2))
 						origin = lastthink_rock_origin[entid],
 						angles = lastthink_rock_angles[entid],
 						targetname = barrelname,
+						parentname = rockname,
 						model = MODEL_BARREL
 					})
 
